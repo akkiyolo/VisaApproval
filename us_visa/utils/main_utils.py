@@ -24,7 +24,7 @@ def write_yaml_file(
     content: object,
     replace: bool = False
 ) -> None:
-
+    
     try:
         if replace:
             if os.path.exists(file_path):
