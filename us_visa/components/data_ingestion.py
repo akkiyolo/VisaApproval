@@ -58,6 +58,7 @@ class DataIngestion:
         On Failure  :   Write an exception log and then raise an exception
         """
         logging.info("Entered split_data_as_train_test method of Data_Ingestion class")
+        
 
         try:
             train_set, test_set = train_test_split(dataframe, test_size=self.data_ingestion_config.train_test_split_ratio)
