@@ -108,7 +108,7 @@ class DataTransformation:
                 train_df = DataTransformation.read_data(file_path=self.data_ingestion_artifact.trained_file_path)
                 test_df = DataTransformation.read_data(file_path=self.data_ingestion_artifact.test_file_path)
 
-                input_feature_train_df = train_df.drop(columns=[TARGET_COLUMN], axis=1)
+                input_feature_train_df = train_df.drop(columns=[TARGET_COLUMN])
                 target_feature_train_df = train_df[TARGET_COLUMN]
 
                 logging.info("Got train features and test features of Training dataset")
@@ -125,10 +125,10 @@ class DataTransformation:
                 
                 target_feature_train_df = target_feature_train_df.replace(
                     TargetValueMapping()._asdict()
-                )
+                ).astype(int)
 
 
-                input_feature_test_df = test_df.drop(columns=[TARGET_COLUMN], axis=1)
+                input_feature_test_df = test_df.drop(columns=[TARGET_COLUMN])
 
                 target_feature_test_df = test_df[TARGET_COLUMN]
 
@@ -143,7 +143,7 @@ class DataTransformation:
 
                 target_feature_test_df = target_feature_test_df.replace(
                 TargetValueMapping()._asdict()
-                )
+                ).astype(int)
 
                 logging.info("Got train features and test features of Testing dataset")
 
@@ -171,13 +171,12 @@ class DataTransformation:
 
                 logging.info("Applied SMOTEENN on training dataset")
 
-                logging.info("Applying SMOTEENN on testing dataset")
-
-                input_feature_test_final, target_feature_test_final = smt.fit_resample(
-                    input_feature_test_arr, target_feature_test_df
-                )
-
-                logging.info("Applied SMOTEENN on testing dataset")
+                # NOTE: Resampling (SMOTEENN) must NOT be applied to the test set.
+                # The test set has to reflect the real, unmodified class distribution
+                # so evaluation metrics stay honest. We only transform it with the
+                # already-fitted preprocessor above and leave it untouched otherwise.
+                input_feature_test_final = input_feature_test_arr
+                target_feature_test_final = target_feature_test_df
 
                 logging.info("Created train array and test array")
 
