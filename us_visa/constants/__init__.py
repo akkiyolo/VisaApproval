@@ -5,12 +5,16 @@ load_dotenv()
 
 DATABASE_NAME = os.getenv("DATABASE_NAME", "US_VISA")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "visa_data")
-MONGODB_URL_KEY = "MONGODB_URL"
+MONGODB_URL_KEY = "CONNECTION_URL"
 
 PIPELINE_NAME: str = "usvisa"
-ARTIFACT_DIR = "artifact"
+ARTIFACT_DIR :str = "artifact"
 
-MODEL_FIT_NAME = "model.pkl"
+TRAIN_FILE_NAME: str = "train.csv"
+TEST_FILE_NAME: str = "test.csv"
+
+FILE_NAME:str="usvisa.csv"
+MODEL_FILE_NAME = "model.pkl"
 
 """
 Data Ingestion related constant start with DATA_INGESTION VAR NAME
