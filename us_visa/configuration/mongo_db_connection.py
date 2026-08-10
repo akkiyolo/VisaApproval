@@ -1,4 +1,5 @@
 import sys
+from typing import Optional
 
 from us_visa.exception import USvisaException
 from us_visa.logger import logging
@@ -6,6 +7,7 @@ from us_visa.logger import logging
 import os
 from us_visa.constants import DATABASE_NAME, MONGODB_URL_KEY
 import pymongo
+from pymongo import MongoClient
 import certifi
 
 ca = certifi.where()
@@ -18,7 +20,7 @@ class MongoDBClient:
     Output      :   connection to mongodb database
     On Failure  :   raises an exception
     """
-    client = None
+    client: Optional[MongoClient] = None
 
     def __init__(self, database_name=DATABASE_NAME) -> None:
         try:
@@ -27,9 +29,12 @@ class MongoDBClient:
                 if mongo_db_url is None:
                     raise Exception(f"Environment key: {MONGODB_URL_KEY} is not set.")
                 MongoDBClient.client = pymongo.MongoClient(mongo_db_url, tlsCAFile=ca)
+
             self.client = MongoDBClient.client
+            assert self.client is not None  # ← narrows type for Pylance + guards at runtime
+
             self.database = self.client[database_name]
             self.database_name = database_name
             logging.info("MongoDB connection succesfull")
         except Exception as e:
-            raise USvisaException(e,sys)
+            raise USvisaException(e, sys)
