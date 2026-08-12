@@ -1,6 +1,8 @@
+import os
 import sys
 from typing import Tuple
 
+import mlflow
 import numpy as np
 
 from sklearn.metrics import (
@@ -21,6 +23,13 @@ from us_visa.utils.main_utils import (
     save_object
 )
 
+from us_visa.utils.mlflow_utils import (
+    log_artifact,
+    log_metrics,
+    log_params,
+    log_tags
+)
+
 from us_visa.entity.config_entity import ModelTrainerConfig
 
 from us_visa.entity.artifact_entity import (
@@ -39,61 +48,59 @@ class ModelTrainer:
         data_transformation_artifact: DataTransformationArtifact,
         model_trainer_config: ModelTrainerConfig
     ):
-        """
-        Constructor for ModelTrainer.
 
-        Parameters
-        ----------
-        data_transformation_artifact:
-            Output artifact from the data transformation stage.
+        self.data_transformation_artifact = (
+            data_transformation_artifact
+        )
 
-        model_trainer_config:
-            Configuration required for model training.
-        """
-
-        self.data_transformation_artifact = data_transformation_artifact
-        self.model_trainer_config = model_trainer_config
+        self.model_trainer_config = (
+            model_trainer_config
+        )
 
     def get_model_object_and_report(
         self,
         train: np.ndarray,
         test: np.ndarray
-    ) -> Tuple[object, ClassificationMetricArtifact]:
+    ) -> Tuple[
+        object,
+        ClassificationMetricArtifact
+    ]:
         """
-        Uses neuro_mf to find the best model and evaluates it
-        on the test dataset.
-
-        Returns
-        -------
-        best_model_detail:
-            Object containing information about the best model.
-
-        metric_artifact:
-            Classification metrics for the selected model.
+        Find the best model using neuro_mf,
+        evaluate it and log the experiment to MLflow.
         """
 
         try:
+
             logging.info(
                 "Entered get_model_object_and_report method"
             )
 
             logging.info(
-                "Using neuro_mf to get the best model object and report"
+                "Using neuro_mf to get the best model"
             )
+
+            # =====================================================
+            # MODEL FACTORY
+            # =====================================================
 
             model_factory = ModelFactory(
-                model_config_path=
-                self.model_trainer_config.model_config_file_path
+                model_config_path=(
+                    self.model_trainer_config
+                    .model_config_file_path
+                )
             )
 
-            # ---------------------------------------------------------
-            # Split train and test arrays into X and y
-            # ---------------------------------------------------------
+            # =====================================================
+            # SPLIT DATA
+            # =====================================================
 
             x_train = train[:, :-1]
+
             y_train = train[:, -1]
 
             x_test = test[:, :-1]
+
             y_test = test[:, -1]
 
             logging.info(
@@ -112,35 +119,102 @@ class ModelTrainer:
                 f"y_test shape: {y_test.shape}"
             )
 
-            # ---------------------------------------------------------
-            # Find the best model
-            # ---------------------------------------------------------
+            # =====================================================
+            # LOG DATASET INFORMATION
+            # =====================================================
 
-            best_model_detail = model_factory.get_best_model(
-                X=x_train,
-                y=y_train,
-                base_accuracy=self.model_trainer_config.expected_accuracy
+            log_params(
+                {
+                    "train_rows": x_train.shape[0],
+                    "train_features": x_train.shape[1],
+                    "test_rows": x_test.shape[0],
+                    "test_features": x_test.shape[1],
+                    "expected_accuracy": (
+                        self.model_trainer_config
+                        .expected_accuracy
+                    )
+                }
             )
 
-            model_obj = best_model_detail.best_model
+            # =====================================================
+            # FIND BEST MODEL
+            # =====================================================
+
+            best_model_detail = (
+                model_factory.get_best_model(
+                    X=x_train,
+                    y=y_train,
+                    base_accuracy=(
+                        self.model_trainer_config
+                        .expected_accuracy
+                    )
+                )
+            )
+
+            model_obj = (
+                best_model_detail.best_model
+            )
+
+            best_score = (
+                best_model_detail.best_score
+            )
 
             logging.info(
                 f"Best model found: {model_obj}"
             )
 
             logging.info(
-                f"Best model score: {best_model_detail.best_score}"
+                f"Best model score: {best_score}"
             )
 
-            # ---------------------------------------------------------
-            # Make predictions
-            # ---------------------------------------------------------
+            # =====================================================
+            # MODEL INFORMATION
+            # =====================================================
 
-            y_pred = model_obj.predict(x_test)
+            model_class = (
+                model_obj.__class__.__name__
+            )
 
-            # ---------------------------------------------------------
-            # Calculate classification metrics
-            # ---------------------------------------------------------
+            log_tags(
+                {
+                    "model_type": model_class,
+                    "framework": "scikit-learn",
+                    "model_selection": "neuro_mf"
+                }
+            )
+
+            # =====================================================
+            # LOG MODEL HYPERPARAMETERS
+            # =====================================================
+
+            try:
+
+                model_params = (
+                    model_obj.get_params()
+                )
+
+                log_params(
+                    model_params
+                )
+
+            except Exception as e:
+
+                logging.warning(
+                    "Could not extract model "
+                    f"hyperparameters: {e}"
+                )
+
+            # =====================================================
+            # PREDICTION
+            # =====================================================
+
+            y_pred = model_obj.predict(
+                x_test
+            )
+
+            # =====================================================
+            # METRICS
+            # =====================================================
 
             accuracy = accuracy_score(
                 y_test,
@@ -178,130 +252,163 @@ class ModelTrainer:
                 f"Recall: {recall}"
             )
 
-            # ---------------------------------------------------------
-            # Create metric artifact
-            # ---------------------------------------------------------
+            # =====================================================
+            # LOG METRICS TO MLFLOW
+            # =====================================================
 
-            metric_artifact = ClassificationMetricArtifact(
-                f1_score=f1,
-                precision_score=precision,
-                recall_score=recall
+            log_metrics(
+                {
+                    "accuracy": accuracy,
+                    "f1_score": f1,
+                    "precision": precision,
+                    "recall": recall,
+                    "best_cv_score": best_score
+                }
+            )
+
+            # =====================================================
+            # CLASSIFICATION METRIC ARTIFACT
+            # =====================================================
+
+            metric_artifact = (
+                ClassificationMetricArtifact(
+                    f1_score=f1,
+                    precision_score=precision,
+                    recall_score=recall
+                )
             )
 
             logging.info(
                 "Created ClassificationMetricArtifact"
             )
 
-            return best_model_detail, metric_artifact
+            return (
+                best_model_detail,
+                metric_artifact
+            )
 
         except Exception as e:
 
-            raise USvisaException(e, sys) from e
+            raise USvisaException(
+                e,
+                sys
+            ) from e
 
     def initiate_model_trainer(
         self
     ) -> ModelTrainerArtifact:
         """
-        Initiates the model training process.
-
-        Returns
-        -------
-        ModelTrainerArtifact
-            Contains the trained model path and evaluation metrics.
+        Initiates model training and logs the resulting
+        model artifacts to MLflow.
         """
 
         logging.info(
-            "Entered initiate_model_trainer method of ModelTrainer class"
+            "Entered initiate_model_trainer method"
         )
 
         try:
 
-            # ---------------------------------------------------------
-            # Load transformed train and test data
-            # ---------------------------------------------------------
+            # =====================================================
+            # LOAD TRAIN DATA
+            # =====================================================
 
             train_arr = load_numpy_array_data(
-                file_path=
-                self.data_transformation_artifact
-                .transformed_train_file_path
+                file_path=(
+                    self.data_transformation_artifact
+                    .transformed_train_file_path
+                )
             )
 
+            # =====================================================
+            # LOAD TEST DATA
+            # =====================================================
+
             test_arr = load_numpy_array_data(
-                file_path=
-                self.data_transformation_artifact
-                .transformed_test_file_path
+                file_path=(
+                    self.data_transformation_artifact
+                    .transformed_test_file_path
+                )
             )
 
             logging.info(
                 "Loaded transformed train and test arrays"
             )
 
-            # ---------------------------------------------------------
-            # Find best model and calculate metrics
-            # ---------------------------------------------------------
+            # =====================================================
+            # TRAIN MODEL
+            # =====================================================
 
-            best_model_detail, metric_artifact = (
-                self.get_model_object_and_report(
-                    train=train_arr,
-                    test=test_arr
-                )
+            (
+                best_model_detail,
+                metric_artifact
+            ) = self.get_model_object_and_report(
+                train=train_arr,
+                test=test_arr
             )
 
-            # ---------------------------------------------------------
-            # Load preprocessing object
-            # ---------------------------------------------------------
+            # =====================================================
+            # LOAD PREPROCESSING OBJECT
+            # =====================================================
 
             preprocessing_obj = load_object(
-                file_path=
-                self.data_transformation_artifact
-                .transformed_object_file_path
+                file_path=(
+                    self.data_transformation_artifact
+                    .transformed_object_file_path
+                )
             )
 
             logging.info(
                 "Loaded preprocessing object"
             )
 
-            # ---------------------------------------------------------
-            # Check whether model meets expected accuracy
-            # ---------------------------------------------------------
+            # =====================================================
+            # ACCURACY CHECK
+            # =====================================================
 
             if (
                 best_model_detail.best_score
-                < self.model_trainer_config.expected_accuracy
+                < self.model_trainer_config
+                .expected_accuracy
             ):
 
                 logging.info(
-                    "No best model found with score more than base score"
+                    "No best model found with score "
+                    "above expected accuracy"
                 )
 
                 raise Exception(
-                    "No best model found with score more than base score"
+                    "No best model found with score "
+                    "above expected accuracy"
                 )
 
             logging.info(
-                "Best model passed the expected accuracy threshold"
+                "Best model passed accuracy threshold"
             )
 
-            # ---------------------------------------------------------
-            # Create US Visa model
-            # ---------------------------------------------------------
+            # =====================================================
+            # CREATE US VISA MODEL
+            # =====================================================
 
             usvisa_model = USvisaModel(
                 preprocessing_object=preprocessing_obj,
-                trained_model_object=best_model_detail.best_model
+                trained_model_object=(
+                    best_model_detail.best_model
+                )
             )
 
             logging.info(
-                "Created USvisaModel object with "
-                "preprocessor and trained model"
+                "Created USvisaModel object"
             )
 
-            # ---------------------------------------------------------
-            # Save trained model
-            # ---------------------------------------------------------
+            # =====================================================
+            # SAVE DEPLOYMENT MODEL
+            # =====================================================
 
             save_object(
-                file_path=self.model_trainer_config.trained_model_file_path,
+                file_path=(
+                    self.model_trainer_config
+                    .trained_model_file_path
+                ),
                 obj=usvisa_model
             )
 
@@ -309,19 +416,65 @@ class ModelTrainer:
                 "Saved trained model successfully"
             )
 
-            # ---------------------------------------------------------
-            # Create ModelTrainerArtifact
-            # ---------------------------------------------------------
+            # =====================================================
+            # LOG MODEL ARTIFACT TO MLFLOW
+            # =====================================================
 
-            model_trainer_artifact = ModelTrainerArtifact(
-                trained_model_file_path=
-                self.model_trainer_config.trained_model_file_path,
+            trained_model_path = (
+                self.model_trainer_config
+                .trained_model_file_path
+            )
 
-                metric_artifact=metric_artifact
+            log_artifact(
+                trained_model_path,
+                artifact_path="deployment_model"
+            )
+
+            # =====================================================
+            # LOG PREPROCESSING ARTIFACT
+            # =====================================================
+
+            preprocessing_path = (
+                self.data_transformation_artifact
+                .transformed_object_file_path
+            )
+
+            log_artifact(
+                preprocessing_path,
+                artifact_path="preprocessing"
+            )
+
+            # =====================================================
+            # LOG MODEL CONFIGURATION
+            # =====================================================
+
+            model_config_path = (
+                self.model_trainer_config
+                .model_config_file_path
+            )
+
+            log_artifact(
+                model_config_path,
+                artifact_path="configuration"
+            )
+
+            # =====================================================
+            # MODEL TRAINER ARTIFACT
+            # =====================================================
+
+            model_trainer_artifact = (
+                ModelTrainerArtifact(
+                    trained_model_file_path=(
+                        self.model_trainer_config
+                        .trained_model_file_path
+                    ),
+                    metric_artifact=metric_artifact
+                )
             )
 
             logging.info(
-                f"Model trainer artifact: {model_trainer_artifact}"
+                f"Model trainer artifact: "
+                f"{model_trainer_artifact}"
             )
 
             logging.info(
@@ -332,4 +485,7 @@ class ModelTrainer:
 
         except Exception as e:
 
-            raise USvisaException(e, sys) from e
+            raise USvisaException(
+                e,
+                sys
+            ) from e
