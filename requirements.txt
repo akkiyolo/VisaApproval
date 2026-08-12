@@ -24,4 +24,6 @@ jinja2
 python-multipart
 python-dotenv
 certifi
+mlflow
+dagshub
 -e .
