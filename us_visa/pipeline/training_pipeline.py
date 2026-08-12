@@ -535,3 +535,10 @@ class TrainPipeline:
                 )
 
                 mlflow.end_run()
+
+if __name__ == "__main__":
+    try:
+        pipeline = TrainPipeline()
+        pipeline.run_pipeline()
+    except Exception as e:
+        raise e
