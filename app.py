@@ -1,20 +1,30 @@
+import os
+from typing import Optional
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from typing import Optional
 from uvicorn import run as app_run
 
-from us_visa.constants import APP_HOST, APP_PORT
 from us_visa.pipeline.prediction_pipeline import (
     USvisaData,
-    USvisaClassifier
+    USvisaClassifier,
 )
+
 from us_visa.pipeline.training_pipeline import TrainPipeline
 
 
-app = FastAPI()
+# =========================================================
+# FASTAPI APPLICATION
+# =========================================================
+
+app = FastAPI(
+    title="US Visa Approval Prediction",
+    description="Machine Learning based US Visa Approval Prediction API",
+    version="1.0.0",
+)
 
 
 # =========================================================
@@ -24,7 +34,7 @@ app = FastAPI()
 app.mount(
     "/static",
     StaticFiles(directory="static"),
-    name="static"
+    name="static",
 )
 
 
@@ -46,7 +56,7 @@ origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -72,7 +82,6 @@ class DataForm:
         self.prevailing_wage: Optional[str] = None
         self.unit_of_wage: Optional[str] = None
         self.full_time_position: Optional[str] = None
-
 
     async def get_usvisa_data(self):
 
@@ -128,9 +137,22 @@ async def index(request: Request):
         "usvisa.html",
         {
             "request": request,
-            "context": None
-        }
+            "context": None,
+        },
     )
+
+
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
+@app.get("/health")
+async def health_check():
+
+    return {
+        "status": "healthy",
+        "message": "US Visa Prediction API is running",
+    }
 
 
 # =========================================================
@@ -147,13 +169,14 @@ async def trainRouteClient():
         train_pipeline.run_pipeline()
 
         return Response(
-            "Training successful !!"
+            content="Training successful !!"
         )
 
     except Exception as e:
 
         return Response(
-            f"Error Occurred! {e}"
+            content=f"Error Occurred! {str(e)}",
+            status_code=500,
         )
 
 
@@ -265,8 +288,8 @@ async def predictRouteClient(request: Request):
             "usvisa.html",
             {
                 "request": request,
-                "context": status
-            }
+                "context": status,
+            },
         )
 
 
@@ -276,8 +299,9 @@ async def predictRouteClient(request: Request):
             "usvisa.html",
             {
                 "request": request,
-                "context": f"Error Occurred! {e}"
-            }
+                "context": f"Error Occurred! {str(e)}",
+            },
+            status_code=500,
         )
 
 
@@ -287,8 +311,15 @@ async def predictRouteClient(request: Request):
 
 if __name__ == "__main__":
 
+    port = int(
+        os.environ.get(
+            "PORT",
+            10000
+        )
+    )
+
     app_run(
         app,
-        host=APP_HOST,
-        port=APP_PORT
+        host="0.0.0.0",
+        port=port,
     )
